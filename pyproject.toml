@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-mlx-stack"
+version = "0.1.0"
+description = "Local-first model router and OpenCode handoff for Apple Silicon, with Agent Cody Banks conventions"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+stack = "local_mlx_stack.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["local_mlx_stack*"]
