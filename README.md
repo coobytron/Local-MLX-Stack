@@ -58,6 +58,36 @@ stack pipeline "Design automatic ControlNet selection based on image references"
 
 The single named trigger follows [Agent Cody Banks](https://github.com/coobytron/Agent-Cody-Banks). Other supported triggers are `parallel`, `isolation`, and `tools`; in that case the text pipeline stops after the draft. These triggers label intent rather than creating fully permissioned workers. ACB's Claude Code enforcement hooks are **not** active in this tool.
 
+## Ground a pipeline in an actual project (recommended)
+
+The pipeline is **text-only**: without project files it can hallucinate a new
+app instead of extending your existing code. Use `--project` to provide a bounded,
+read-only snapshot of the current repository. Files are inspected locally;
+common generated directories, secrets/config, and executable agent instructions
+are excluded. Source snippets are never executed. Only a subset of files is
+included, so missing behavior must remain unverified until inspected.
+
+For your existing Draw Things Control app (React/Vite + FastAPI with optional
+Ollama/LM Studio assistance and HTTP/gRPC Draw Things adapters):
+
+```bash
+stack pipeline "Extend existing Draw Things Control with an opt-in AI controller; preserve current local-model discovery, capability preflight, HTTP/gRPC transports and user approval" \
+  --project ~/Dev/draw-things-control \
+  --no-acb \
+  --trigger review \
+  --output ./draw-things-controller-proposal.json
+```
+
+Set `--project` to your actual checkout location. `--no-acb` skips optional
+external agent guidance **for this invocation only**; it does not modify that
+other repository or its plugin. `--trigger review` adds a text review, not a
+worker with tool permissions. The JSON includes `project` and `context_files`
+so you can inspect exactly which files informed the model.
+
+The project snapshot is intentionally restricted and **does not replace**
+reading the full source before implementing changes. Keep the existing typed
+Draw Things contracts, loopback-only security, and explicit user approval.
+
 ## OpenCode: real code edits
 
 This repo includes an `opencode.json` using the Ollama OpenAI-compatible endpoint. The wrapper forwards that configuration to OpenCode with `OPENCODE_CONFIG`, works in your target project directory, and defaults to a **dry run**:

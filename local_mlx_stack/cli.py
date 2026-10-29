@@ -30,7 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--json", action="store_true", help="Print structured result")
     pipe = sub.add_parser("pipeline", help="Opt in to sequential brief/plan/draft/review text-only stages")
     pipe.add_argument("prompt")
-    pipe.add_argument("--trigger", choices=TRIGGERS, required=True, help="Exactly one Agent Cody Banks trigger")
+    pipe.add_argument("--trigger", choices=TRIGGERS, required=True, help="Pipeline stage selector (review adds critique)")
+    pipe.add_argument("--project", type=Path, help="Read bounded source context from this existing project")
+    pipe.add_argument("--no-acb", action="store_true", help="Disable optional external agent guidance for this run")
     pipe.add_argument("--output", type=Path, help="Save result as JSON")
     api = sub.add_parser("serve", help="Start localhost-only JSON API")
     api.add_argument("--port", type=int, default=8788)
@@ -69,13 +71,17 @@ def main(argv: list[str] | None = None) -> int:
             a = stack.ask(args.prompt, args.role)
             print(json.dumps(a.as_dict(), indent=2) if args.json else f"[{a.role} · {a.model}]\n{a.response}")
         elif args.command == "pipeline":
-            result = stack.pipeline(args.prompt, args.trigger)
+            result = stack.pipeline(args.prompt, args.trigger, project=args.project, use_acb=not args.no_acb)
             if args.output:
                 dest = args.output.expanduser().resolve()
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
                 print(f"Saved text-only proposal: {dest}")
             else:
+                if args.project:
+                    print(f"Project grounding: {result['project']} ({len(result['context_files'])} files excerpted)")
+                else:
+                    print("Warning: no --project provided; proposal is conceptual and unverified.", file=sys.stderr)
                 for k, v in result.items():
                     if isinstance(v, str):
                         print(f"\n--- {k.upper()} ---\n{v}")

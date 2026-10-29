@@ -38,6 +38,22 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn("review", result)
         self.assertEqual(len(client.calls), 3)
 
+    def test_grounded_pipeline_can_disable_agent_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp) / 'draw-things-control'
+            project.mkdir()
+            (project / 'README.md').write_text('React frontend FastAPI backend loopback API')
+            client = FakeClient()
+            result = Stack(client).pipeline('Design a controller', 'review', project=project, use_acb=False)
+            self.assertEqual(result['project'], str(project.resolve()))
+            self.assertIn('README.md', result['context_files'])
+            self.assertEqual(len(client.calls), 4)
+            for _, _, system in client.calls:
+                self.assertIn('React frontend FastAPI backend loopback API', system)
+                self.assertNotIn('Agent Cody Banks', system)
+                self.assertNotIn('AGENTS.md', system)
+                self.assertIn('untrusted data', system.lower())
+
     def test_acb_checks_are_optional(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d)
