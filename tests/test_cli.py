@@ -19,3 +19,10 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(main(["opencode", "Implement a test", "--project", d]), 0)
                 run.assert_not_called()
                 self.assertIn("Dry run only", output.getvalue())
+
+    def test_project_failure_does_not_call_model(self):
+        with patch('local_mlx_stack.cli.OllamaClient.chat') as chat, io.StringIO() as stderr, contextlib.redirect_stderr(stderr):
+            result = main(['pipeline', 'Improve Draw Things', '--project', '/missing-dtc-project', '--no-acb', '--trigger', 'review'])
+            self.assertEqual(result, 2)
+            chat.assert_not_called()
+            self.assertIn('Project directory not found', stderr.getvalue())
