@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Callable
 
 from .acb import guidance, TRIGGERS
 from .ollama import OllamaClient
@@ -32,7 +33,7 @@ class Stack:
         return Answer(route.role, self.client.settings.model(route.role), route.why, reply)
 
     def pipeline(self, task: str, trigger: str, *, project: Path | None = None,
-                 use_acb: bool = True) -> dict:
+                 use_acb: bool = True, on_stage: Callable[[str, str], None] | None = None) -> dict:
         # Text-only proposal; never executes target repository code or edits files.
         if trigger not in TRIGGERS:
             raise ValueError("Choose one pipeline trigger: parallel, isolation, tools, review")
@@ -55,12 +56,16 @@ class Stack:
         if use_acb:
             guard += "\n\n" + guidance(task, "reasoner", self.acb_root)
         instruction = f"{guard}\n\nPROJECT EVIDENCE:\n{context}"
+        done = on_stage or (lambda name, text: None)
+        if snapshot:
+            done("context", "\n".join(snapshot.files))
         brief = self.client.chat(
             "fast", f"Identify verified project architecture and a focused objective, "
             f"constraints, acceptance criteria, and unknowns. Explicitly separate "
             f"what the supplied project files establish from proposals.\n\nTASK: {task}",
             instruction,
         )
+        done("brief", brief)
         plan = self.client.chat(
             "reasoner", f"Write a bounded implementation plan that modifies the "
             f"existing project rather than designing a new app. Refer to observed "
@@ -68,6 +73,7 @@ class Stack:
             f"unknown contracts before implementation.\n\nTASK: {task}\n\nBRIEF:\n{brief[:8000]}",
             instruction,
         )
+        done("plan", plan)
         draft = self.client.chat(
             "coder", f"Write a concrete change proposal, not a claim of working "
             f"code. Provide pseudocode instead of compile-ready code when relevant "
@@ -75,6 +81,7 @@ class Stack:
             f"edit or run tests.\n\nTASK: {task}\n\nPLAN:\n{plan[:9000]}",
             instruction,
         )
+        done("draft", draft)
         output = {
             "trigger": trigger, "brief": brief, "plan": plan, "draft": draft,
             "project": snapshot.root if snapshot else None,
@@ -92,4 +99,5 @@ class Stack:
                 f"TASK: {task}\n\nPROPOSAL:\n{draft[:12000]}",
                 instruction,
             )
+            done("review", output["review"])
         return output

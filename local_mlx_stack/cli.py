@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 
+from . import opencode
 from .acb import ACB_URL, TRIGGERS, locate
 from .core import Stack
 from .ollama import OllamaClient, OllamaError, Settings
@@ -90,15 +91,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("port must be between 1 and 65535")
             serve(stack, args.port)
         elif args.command == "opencode":
-            project = args.project.expanduser().resolve()
-            if not project.is_dir():
-                raise ValueError(f"Not a directory: {project}")
-            r = select(args.prompt, args.role)
-            cmd = ["opencode", "run", "--model", f"ollama/{settings.model(r.role)}", args.prompt]
-            config = (Path(__file__).resolve().parent.parent / "opencode.json").resolve()
+            p = opencode.plan(args.prompt, args.project, args.role, settings)
+            cmd, project = p["command"], p["project"]
             env = os.environ.copy()
-            if config.exists():
-                env["OPENCODE_CONFIG"] = str(config)
+            if p["config"]:
+                env["OPENCODE_CONFIG"] = p["config"]
             print(f"Project: {project}\nCommand: {cmd!r}\nConfig: {env.get('OPENCODE_CONFIG', '(autodiscovery)')}", flush=True)
             if args.execute:
                 if not shutil.which("opencode"):

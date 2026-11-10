@@ -105,6 +105,10 @@ Install [OpenCode](https://opencode.ai/) separately. It may ask you to approve f
 
 The target project can override models and permissions with its own OpenCode configuration. To use OpenCode interactively rather than with a single task, run `opencode` from the target repository and select `ollama/qwen3-coder:30b`.
 
+## Web interface
+
+Double-click `start.command` (or run `stack serve`) and open http://127.0.0.1:8788. Four tabs: **Status** (roles and installed models), **Ask** (live router preview, one model), **Pipeline** (stages fill in as they finish), **OpenCode** (shows the command; never runs it). Loopback only; the page itself is the only browser origin allowed.
+
 ## API for Draw Things or your other apps
 
 ```bash

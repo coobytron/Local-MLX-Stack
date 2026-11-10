@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local MLX Stack</title>
+<style>
+  :root { --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --mute:#6e6e73; --line:#d2d2d7; --acc:#0071e3; --ok:#1a7f37; --bad:#c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --card:#1c1c1e; --ink:#f5f5f7; --mute:#98989d; --line:#3a3a3c; --acc:#2997ff; --ok:#46c26b; --bad:#ff6b6b; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system,"SF Pro Text",system-ui,sans-serif; }
+  main { max-width:860px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; } .sub { color:var(--mute); margin:0 0 16px; }
+  nav { display:flex; gap:6px; margin-bottom:16px; }
+  nav button { flex:1; padding:9px 0; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:10px; font:inherit; font-weight:600; cursor:pointer; }
+  nav button.on { background:var(--acc); border-color:var(--acc); color:#fff; }
+  section { display:none; } section.on { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
+  .how { color:var(--mute); font-size:13px; margin:0 0 12px; }
+  label { display:block; font-weight:600; font-size:13px; margin:12px 0 4px; }
+  textarea, input, select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--ink); font:inherit; }
+  textarea { min-height:84px; resize:vertical; }
+  .row { display:flex; gap:12px; } .row > * { flex:1; }
+  .go { margin-top:12px; padding:10px 18px; border:0; border-radius:10px; background:var(--acc); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  .go:disabled { opacity:.5; cursor:wait; }
+  pre { white-space:pre-wrap; word-break:break-word; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; margin:6px 0 0; font:13px/1.45 ui-monospace,"SF Mono",monospace; }
+  .pill { display:inline-block; padding:2px 9px; border-radius:99px; border:1px solid var(--line); font-size:12px; font-weight:600; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .mute { color:var(--mute); }
+  table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:7px 4px; border-bottom:1px solid var(--line); font-size:14px; }
+  .stage h3 { margin:0; font-size:14px; } .stage { margin-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Local MLX Stack</h1>
+  <p class="sub">One local model at a time, picked for the job. Nothing here edits files.</p>
+  <nav id="tabs">
+    <button data-t="status" class="on">Status</button>
+    <button data-t="ask">Ask</button>
+    <button data-t="pipeline">Pipeline</button>
+    <button data-t="opencode">OpenCode</button>
+  </nav>
+
+  <section id="status" class="on">
+    <div class="card">
+      <p class="how">The three roles and the models behind them. Each model loads for one reply, then unloads (keep_alive=0) so memory stays free.</p>
+      <div id="st-body" class="mute">Loading…</div>
+    </div>
+  </section>
+
+  <section id="ask">
+    <div class="card">
+      <p class="how">A keyword router picks the model: code words → <b>coder</b>, planning words → <b>reasoner</b>, anything else → <b>fast</b>. No AI is used to choose. Watch it update as you type.</p>
+      <label for="ask-prompt">Prompt</label>
+      <textarea id="ask-prompt" placeholder="e.g. Fix the bug in my shader"></textarea>
+      <div class="row">
+        <div><label for="ask-role">Role</label>
+          <select id="ask-role"><option>auto</option><option>fast</option><option>coder</option><option>reasoner</option></select></div>
+        <div><label>Router says</label><div id="ask-route" class="mute" style="padding:9px 0">type something…</div></div>
+      </div>
+      <button class="go" id="ask-go">Ask</button>
+      <div id="ask-out"></div>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <div class="card">
+      <p class="how">Runs three models in order: <b>fast</b> writes a brief → <b>reasoner</b> plans → <b>coder</b> drafts. With <i>review</i>, the reasoner then critiques the draft. Text only; it can be slow. Give it a project folder so it reads your real files instead of guessing.</p>
+      <label for="pl-prompt">Task</label>
+      <textarea id="pl-prompt" placeholder="e.g. Add a retry button to the render queue"></textarea>
+      <label for="pl-project">Project folder (optional, absolute path)</label>
+      <input id="pl-project" placeholder="/Users/you/Dev/my-project">
+      <div class="row">
+        <div><label for="pl-trigger">Trigger</label><select id="pl-trigger"></select></div>
+        <div><label for="pl-acb">Agent Cody Banks guidance</label><select id="pl-acb"><option value="1">On</option><option value="0">Off</option></select></div>
+      </div>
+      <button class="go" id="pl-go">Run pipeline</button>
+      <div id="pl-out"></div>
+    </div>
+  </section>
+
+  <section id="opencode">
+    <div class="card">
+      <p class="how">OpenCode is the tool that actually edits code. This page only shows the command. Copy it and run it in Terminal, where OpenCode asks before each edit.</p>
+      <label for="oc-prompt">Task</label>
+      <textarea id="oc-prompt" placeholder="e.g. Add tests for the history restore feature"></textarea>
+      <label for="oc-project">Project folder (absolute path)</label>
+      <input id="oc-project" placeholder="/Users/you/Dev/my-project">
+      <label for="oc-role">Role</label>
+      <select id="oc-role"><option>coder</option><option>auto</option><option>fast</option><option>reasoner</option></select>
+      <button class="go" id="oc-go">Show command</button>
+      <div id="oc-out"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const post = async (path, body) => {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const show = (box, ...nodes) => box.replaceChildren(...nodes);
+const block = (title, text) => { const d = el("div", "stage"); d.append(el("h3", null, title), el("pre", null, text)); return d; };
+
+document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("#tabs button, section").forEach((n) => n.classList.remove("on"));
+  b.classList.add("on"); $(b.dataset.t).classList.add("on");
+  if (b.dataset.t === "status") loadStatus();
+});
+
+async function loadStatus() {
+  const box = $("st-body");
+  try {
+    const s = await (await fetch("/status")).json();
+    const t = el("table"); t.innerHTML = "<tr><th>Role</th><th>Model</th><th></th></tr>";
+    for (const r of s.roles) {
+      const tr = el("tr"), st = el("td", r.installed ? "ok" : "bad", r.installed ? "✓ installed" : "✗ missing");
+      tr.append(el("td", null, r.role), el("td", null, r.model), st); t.append(tr);
+    }
+    const facts = el("p", "mute", `Ollama ${s.ollama} · ${s.error ? "NOT reachable: " + s.error : "reachable"} · loaded now: ${s.loaded.join(", ") || "none"} · context ${s.num_ctx} · keep_alive ${s.keep_alive} · OpenCode: ${s.opencode || "not in PATH"} · ACB: ${s.acb || "not found (optional)"}`);
+    box.className = ""; show(box, t, facts);
+    const sel = $("pl-trigger");
+    if (!sel.options.length) s.triggers.forEach((x) => sel.add(new Option(x)));
+    sel.value = sel.value || "review";
+  } catch (e) { box.textContent = "Could not load status: " + e.message; }
+}
+
+let timer;
+function routePreview() {
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    const prompt = $("ask-prompt").value.trim(), out = $("ask-route");
+    if (!prompt) { out.textContent = "type something…"; return; }
+    try { const r = await post("/route", { prompt, role: $("ask-role").value }); out.textContent = `${r.role} · ${r.model} (${r.why})`; }
+    catch (e) { out.textContent = e.message; }
+  }, 250);
+}
+$("ask-prompt").oninput = routePreview; $("ask-role").onchange = routePreview;
+
+async function guarded(btn, box, fn) {
+  btn.disabled = true; show(box, el("p", "mute", "Working…"));
+  try { await fn(); } catch (e) { show(box, el("p", "bad", "Error: " + e.message)); }
+  btn.disabled = false;
+}
+
+$("ask-go").onclick = () => guarded($("ask-go"), $("ask-out"), async () => {
+  const a = await post("/chat", { prompt: $("ask-prompt").value, role: $("ask-role").value });
+  show($("ask-out"), block(`${a.role} · ${a.model} — ${a.reason}`, a.response));
+});
+
+$("pl-go").onclick = () => guarded($("pl-go"), $("pl-out"), async () => {
+  const { id } = await post("/pipeline", {
+    prompt: $("pl-prompt").value, trigger: $("pl-trigger").value,
+    project: $("pl-project").value.trim() || null, use_acb: $("pl-acb").value === "1",
+  });
+  for (;;) {
+    const j = await (await fetch("/job/" + id)).json();
+    const nodes = j.stages.map((s) => block(s.name === "context" ? "files read" : s.name, s.text));
+    if (j.status === "running") nodes.push(el("p", "mute", "Next stage running…"));
+    show($("pl-out"), ...nodes);
+    if (j.status === "error") throw new Error(j.error);
+    if (j.status === "done") return;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+});
+
+$("oc-go").onclick = () => guarded($("oc-go"), $("oc-out"), async () => {
+  const p = await post("/opencode", { prompt: $("oc-prompt").value, project: $("oc-project").value, role: $("oc-role").value });
+  const q = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
+  const line = `cd ${q(p.project)} && ` + (p.config ? `OPENCODE_CONFIG=${q(p.config)} ` : "") + p.command.map(q).join(" ");
+  show($("oc-out"), block(`${p.role} · ${p.model} — ${p.why}`, line));
+});
+
+loadStatus();
+</script>
+</body>
+</html>

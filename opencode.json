@@ -13,6 +13,10 @@
           "name": "Gemma 4 12B (fast)",
           "limit": {"context": 16384, "output": 4096}
         },
+        "gemma4:12b-mlx": {
+          "name": "Gemma 4 12B MLX (small coder trial)",
+          "limit": {"context": 16384, "output": 4096}
+        },
         "qwen3-coder:30b": {
           "name": "Qwen3-Coder 30B (code)",
           "limit": {"context": 16384, "output": 4096}
