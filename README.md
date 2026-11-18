@@ -103,11 +103,22 @@ stack opencode "Add tests for the history restore feature" \
 
 Install [OpenCode](https://opencode.ai/) separately. It may ask you to approve file edits or commands; the stack intentionally does **not** auto-approve them. Run `opencode run --help` to verify your installed OpenCode version. OpenCode configuration has evolved between releases; if your version already autodiscovers Ollama, that is another supported route. The wrapper never invokes `opencode` unless you pass `--execute`.
 
+**One-time setup for OpenCode's context.** OpenCode talks to Ollama's `/v1` endpoint, which can't set `num_ctx`, so a too-small default can make OpenCode's auto-summary repeat forever. Create a bigger-context copy of the coder model once:
+
+```bash
+printf 'FROM qwen3-coder:30b\nPARAMETER num_ctx 32768\n' > /tmp/Modelfile
+ollama create qwen3-coder-32k -f /tmp/Modelfile
+```
+
+`opencode.json` defaults to `ollama/qwen3-coder-32k` and turns on `compaction.prune` so old tool output is dropped as it goes. While a run is active, `ollama ps` shows the real context in use.
+
 The target project can override models and permissions with its own OpenCode configuration. To use OpenCode interactively rather than with a single task, run `opencode` from the target repository and select `ollama/qwen3-coder:30b`.
 
 ## Web interface
 
-Double-click `start.command` (or run `stack serve`) and open http://127.0.0.1:8788. Four tabs: **Status** (roles and installed models), **Ask** (live router preview, one model), **Pipeline** (stages fill in as they finish), **OpenCode** (shows the command; never runs it). Loopback only; the page itself is the only browser origin allowed.
+Double-click `start.command` (or run `stack serve`) and open http://127.0.0.1:8788. Five tabs: **Status** (roles and installed models), **Ask** (live router preview, one model), **Pipeline** (stages fill in as they finish), **Research** (see below), **OpenCode** (shows the command; never runs it). Loopback only; the page itself is the only browser origin allowed.
+
+**Research is the only part that uses the internet.** Give it a start URL; plain code fetches up to 3/5/10 pages on that same site (obeys `robots.txt`, waits 1 s between pages, public hosts only, http/https only, 1 MB per page) and the fast model writes one summary per page. No model chooses what to fetch, and nothing is sent anywhere except normal page requests. JavaScript-built, login-protected and internal pages won't work.
 
 ## API for Draw Things or your other apps
 

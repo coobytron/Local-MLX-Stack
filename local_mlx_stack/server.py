@@ -11,13 +11,14 @@ from pathlib import Path
 from . import opencode
 from .acb import TRIGGERS
 from .core import Stack
+from .crawl import CrawlError, check_public
 from .ollama import OllamaError
 from .routing import select
 
 MAX_BODY = 100_000
 MAX_JOBS = 20
 UI = Path(__file__).with_name("ui.html")
-POST_PATHS = ("/route", "/chat", "/pipeline", "/opencode")
+POST_PATHS = ("/route", "/chat", "/pipeline", "/opencode", "/crawl")
 
 
 def status(stack: Stack) -> dict:
@@ -37,18 +38,28 @@ def status(stack: Stack) -> dict:
     }
 
 
-def serve(stack: Stack, port: int = 8788) -> None:
+def serve(stack: Stack, port: int = 8788, *, allow_private: bool = False, crawl_delay: float = 1.0) -> None:
     jobs: dict[str, dict] = {}
     jobs_lock = threading.Lock()
 
-    def run_job(job: dict, prompt: str, trigger: str, project: Path | None, use_acb: bool) -> None:
-        def on_stage(name: str, text: str) -> None:
-            job["stages"].append({"name": name, "text": text})
-        try:
-            job["result"] = stack.pipeline(prompt, trigger, project=project, use_acb=use_acb, on_stage=on_stage)
-            job["status"] = "done"
-        except (OllamaError, ValueError, OSError) as exc:
-            job["error"], job["status"] = str(exc), "error"
+    def start_job(work) -> str:
+        """Run work(on_stage) in a thread; the page polls /job/<id> for stages as they land."""
+        job = {"status": "running", "stages": [], "result": None, "error": None}
+
+        def run() -> None:
+            try:
+                job["result"] = work(lambda name, text: job["stages"].append({"name": name, "text": text}))
+                job["status"] = "done"
+            except (OllamaError, ValueError, OSError) as exc:
+                job["error"], job["status"] = str(exc), "error"
+
+        with jobs_lock:
+            while len(jobs) >= MAX_JOBS:
+                jobs.pop(next(iter(jobs)))
+            job_id = uuid.uuid4().hex[:12]
+            jobs[job_id] = job
+        threading.Thread(target=run, daemon=True).start()
+        return job_id
 
     class Handler(BaseHTTPRequestHandler):
         def send_json(self, code: int, value: dict):
@@ -108,6 +119,20 @@ def serve(stack: Stack, port: int = 8788) -> None:
                 if length <= 0 or length > MAX_BODY:
                     return self.send_json(413, {"error": "invalid request size"})
                 data = json.loads(self.rfile.read(length))
+                if self.path == "/crawl":
+                    ok = isinstance(data, dict)
+                    url, focus = (data.get("url"), data.get("focus", "")) if ok else (None, "")
+                    if not isinstance(url, str) or not url.strip() or not isinstance(focus, str):
+                        return self.send_json(400, {"error": "a start URL is required"})
+                    try:
+                        pages = int(data.get("max_pages", 5))
+                        check_public(url.strip(), allow_private)
+                    except CrawlError as exc:
+                        return self.send_json(400, {"error": str(exc)})
+                    job_id = start_job(lambda on_stage: stack.crawl(
+                        url.strip(), focus=focus, max_pages=pages, on_stage=on_stage,
+                        allow_private=allow_private, delay=crawl_delay))
+                    return self.send_json(202, {"id": job_id})
                 if not isinstance(data, dict) or not isinstance(data.get("prompt"), str) or not data["prompt"].strip():
                     return self.send_json(400, {"error": "non-empty prompt is required"})
                 prompt, role = data["prompt"], data.get("role", "auto")
@@ -126,16 +151,9 @@ def serve(stack: Stack, port: int = 8788) -> None:
                     trigger, project = data.get("trigger", "review"), data.get("project") or None
                     if trigger not in TRIGGERS or (project is not None and not isinstance(project, str)):
                         return self.send_json(400, {"error": "invalid trigger or project"})
-                    job = {"status": "running", "stages": [], "result": None, "error": None}
-                    with jobs_lock:
-                        while len(jobs) >= MAX_JOBS:
-                            jobs.pop(next(iter(jobs)))
-                        job_id = uuid.uuid4().hex[:12]
-                        jobs[job_id] = job
-                    threading.Thread(
-                        target=run_job, daemon=True,
-                        args=(job, prompt, trigger, Path(project) if project else None, bool(data.get("use_acb", True))),
-                    ).start()
+                    job_id = start_job(lambda on_stage: stack.pipeline(
+                        prompt, trigger, project=Path(project) if project else None,
+                        use_acb=bool(data.get("use_acb", True)), on_stage=on_stage))
                     return self.send_json(202, {"id": job_id})
                 return self.send_json(200, stack.ask(prompt, role).as_dict())
             except (ValueError, TypeError, json.JSONDecodeError) as exc:

@@ -28,6 +28,9 @@
   .ok { color:var(--ok); } .bad { color:var(--bad); } .mute { color:var(--mute); }
   table { width:100%; border-collapse:collapse; } td, th { text-align:left; padding:7px 4px; border-bottom:1px solid var(--line); font-size:14px; }
   .stage h3 { margin:0; font-size:14px; } .stage { margin-top:12px; }
+  .bar { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .copy { padding:3px 10px; border:1px solid var(--line); border-radius:7px; background:var(--card); color:var(--acc); font:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+  .code { margin-top:8px; } .code .bar { color:var(--mute); font-size:12px; margin-bottom:-2px; }
 </style>
 </head>
 <body>
@@ -38,6 +41,7 @@
     <button data-t="status" class="on">Status</button>
     <button data-t="ask">Ask</button>
     <button data-t="pipeline">Pipeline</button>
+    <button data-t="crawl">Research</button>
     <button data-t="opencode">OpenCode</button>
   </nav>
 
@@ -79,6 +83,21 @@
     </div>
   </section>
 
+  <section id="crawl">
+    <div class="card">
+      <p class="how">Reads a page, follows its links on <b>the same site only</b>, and writes one short summary per page. Plain code does the fetching (it obeys robots.txt and waits between pages); the <b>fast</b> model only summarizes. Public websites only: internal or login-protected pages won't work, and pages built by JavaScript may come back empty.</p>
+      <label for="cr-url">Start URL</label>
+      <input id="cr-url" placeholder="https://example.com/docs">
+      <div class="row">
+        <div><label for="cr-focus">Look for (optional)</label><input id="cr-focus" placeholder="e.g. pricing, install steps"></div>
+        <div><label for="cr-max">Max pages</label>
+          <select id="cr-max"><option>3</option><option selected>5</option><option>10</option></select></div>
+      </div>
+      <button class="go" id="cr-go">Start research</button>
+      <div id="cr-out"></div>
+    </div>
+  </section>
+
   <section id="opencode">
     <div class="card">
       <p class="how">OpenCode is the tool that actually edits code. This page only shows the command. Copy it and run it in Terminal, where OpenCode asks before each edit.</p>
@@ -104,7 +123,33 @@ const post = async (path, body) => {
   return j;
 };
 const show = (box, ...nodes) => box.replaceChildren(...nodes);
-const block = (title, text) => { const d = el("div", "stage"); d.append(el("h3", null, title), el("pre", null, text)); return d; };
+const copyBtn = (getText, label) => {
+  const b = el("button", "copy", label);
+  b.onclick = async () => {
+    try { await navigator.clipboard.writeText(getText()); b.textContent = "Copied ✓"; }
+    catch { b.textContent = "Copy failed"; }
+    setTimeout(() => (b.textContent = label), 1500);
+  };
+  return b;
+};
+// Whole reply gets "Copy"; each ``` code fence inside it also gets its own "Copy code".
+const block = (title, text) => {
+  const d = el("div", "stage"), bar = el("div", "bar");
+  bar.append(el("h3", null, title), copyBtn(() => text, "Copy"));
+  d.append(bar);
+  const fence = /```([^\n`]*)\n([\s\S]*?)```/g;
+  let last = 0, m;
+  const prose = (s) => { if (s.trim()) d.append(el("pre", null, s.trim())); };
+  while ((m = fence.exec(text))) {
+    prose(text.slice(last, m.index));
+    const code = m[2].replace(/\n$/, ""), c = el("div", "code"), cb = el("div", "bar");
+    cb.append(el("span", null, m[1].trim() || "code"), copyBtn(() => code, "Copy code"));
+    c.append(cb, el("pre", null, code)); d.append(c);
+    last = fence.lastIndex;
+  }
+  prose(text.slice(last));
+  return d;
+};
 
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
   document.querySelectorAll("#tabs button, section").forEach((n) => n.classList.remove("on"));
@@ -152,20 +197,31 @@ $("ask-go").onclick = () => guarded($("ask-go"), $("ask-out"), async () => {
   show($("ask-out"), block(`${a.role} · ${a.model} — ${a.reason}`, a.response));
 });
 
+async function watchJob(id, box, label) {
+  for (;;) {
+    const j = await (await fetch("/job/" + id)).json();
+    const nodes = j.stages.map((s) => block(s.name === "context" ? "files read" : s.name, s.text));
+    if (j.status === "running") nodes.push(el("p", "mute", label));
+    show(box, ...nodes);
+    if (j.status === "error") throw new Error(j.error);
+    if (j.status === "done") return;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
+
 $("pl-go").onclick = () => guarded($("pl-go"), $("pl-out"), async () => {
   const { id } = await post("/pipeline", {
     prompt: $("pl-prompt").value, trigger: $("pl-trigger").value,
     project: $("pl-project").value.trim() || null, use_acb: $("pl-acb").value === "1",
   });
-  for (;;) {
-    const j = await (await fetch("/job/" + id)).json();
-    const nodes = j.stages.map((s) => block(s.name === "context" ? "files read" : s.name, s.text));
-    if (j.status === "running") nodes.push(el("p", "mute", "Next stage running…"));
-    show($("pl-out"), ...nodes);
-    if (j.status === "error") throw new Error(j.error);
-    if (j.status === "done") return;
-    await new Promise((r) => setTimeout(r, 1500));
-  }
+  await watchJob(id, $("pl-out"), "Next stage running…");
+});
+
+$("cr-go").onclick = () => guarded($("cr-go"), $("cr-out"), async () => {
+  const { id } = await post("/crawl", {
+    url: $("cr-url").value.trim(), focus: $("cr-focus").value, max_pages: Number($("cr-max").value),
+  });
+  await watchJob(id, $("cr-out"), "Next page running…");
 });
 
 $("oc-go").onclick = () => guarded($("oc-go"), $("oc-out"), async () => {
