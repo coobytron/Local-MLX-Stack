@@ -72,6 +72,9 @@ class ServerTests(unittest.TestCase):
     def test_opencode_plan_does_not_run(self):
         with tempfile.TemporaryDirectory() as d:
             code, raw = self.call("POST", "/opencode", {"prompt": "fix a bug", "project": d})
+            quoted = self.call("POST", "/opencode", {"prompt": "fix a bug", "project": f"'{d}'"})[0]
+            escaped = self.call("POST", "/opencode", {"prompt": "fix a bug", "project": d.replace(" ", "\\ ")})[0]
+        self.assertEqual((quoted, escaped), (200, 200))  # pasted-from-Terminal paths work
         self.assertEqual(code, 200)
         plan = json.loads(raw)
         self.assertEqual(plan["role"], "coder")

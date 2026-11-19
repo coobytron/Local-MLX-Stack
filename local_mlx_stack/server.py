@@ -21,6 +21,14 @@ UI = Path(__file__).with_name("ui.html")
 POST_PATHS = ("/route", "/chat", "/pipeline", "/opencode", "/crawl")
 
 
+def clean_path(raw: str) -> str:
+    """Accept paths pasted from Terminal or Finder: quotes and backslash-escaped spaces."""
+    s = raw.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
+        s = s[1:-1]
+    return s.replace("\\ ", " ").strip()
+
+
 def status(stack: Stack) -> dict:
     s = stack.client.settings
     try:
@@ -146,13 +154,13 @@ def serve(stack: Stack, port: int = 8788, *, allow_private: bool = False, crawl_
                     project = data.get("project")
                     if not isinstance(project, str) or not project.strip():
                         return self.send_json(400, {"error": "project folder is required"})
-                    return self.send_json(200, opencode.plan(prompt, Path(project), role, settings))
+                    return self.send_json(200, opencode.plan(prompt, Path(clean_path(project)), role, settings))
                 if self.path == "/pipeline":
                     trigger, project = data.get("trigger", "review"), data.get("project") or None
                     if trigger not in TRIGGERS or (project is not None and not isinstance(project, str)):
                         return self.send_json(400, {"error": "invalid trigger or project"})
                     job_id = start_job(lambda on_stage: stack.pipeline(
-                        prompt, trigger, project=Path(project) if project else None,
+                        prompt, trigger, project=Path(clean_path(project)) if project else None,
                         use_acb=bool(data.get("use_acb", True)), on_stage=on_stage))
                     return self.send_json(202, {"id": job_id})
                 return self.send_json(200, stack.ask(prompt, role).as_dict())
