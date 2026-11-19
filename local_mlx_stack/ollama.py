@@ -14,6 +14,12 @@ class OllamaError(RuntimeError):
     """An Ollama API request failed."""
 
 
+def is_installed(model: str, installed: list[str]) -> bool:
+    """Ollama lists untagged models as 'name:latest', so match either spelling."""
+    return model in installed or f"{model}:latest" in installed or (
+        model.endswith(":latest") and model[:-7] in installed)
+
+
 @dataclass(frozen=True)
 class Settings:
     base_url: str = "http://127.0.0.1:11434"

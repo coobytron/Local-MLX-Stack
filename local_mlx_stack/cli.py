@@ -12,7 +12,7 @@ import sys
 from . import opencode
 from .acb import ACB_URL, TRIGGERS, locate
 from .core import Stack
-from .ollama import OllamaClient, OllamaError, Settings
+from .ollama import OllamaClient, OllamaError, Settings, is_installed
 from .routing import select
 from .server import serve
 
@@ -58,13 +58,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Ollama: {settings.base_url} (reachable)")
             for role in ("fast", "coder", "reasoner"):
                 model = settings.model(role)
-                present = model in models or (model.endswith(":latest") and model[:-7] in models)
+                present = is_installed(model, models)
                 print(f"  {role:8} {model:25} {'INSTALLED' if present else 'MISSING'}")
             print(f"Loaded: {', '.join(loaded) if loaded else '(none)'}")
             print(f"48GB profile: num_ctx={settings.context}, keep_alive={settings.keep_alive}")
             print(f"OpenCode: {shutil.which('opencode') or 'not in PATH'}")
             print(f"Agent Cody Banks: {acb_root or 'not found (optional)'} — {ACB_URL}")
-            return 0 if all(settings.model(r) in models for r in ("fast", "coder", "reasoner")) else 1
+            return 0 if all(is_installed(settings.model(r), models) for r in ("fast", "coder", "reasoner")) else 1
         if args.command == "route":
             r = select(args.prompt, args.role)
             print(json.dumps({"role": r.role, "model": settings.model(r.role), "why": r.why}, indent=2))

@@ -19,7 +19,8 @@ class FakeClient:
         return f"response for {role}"
 
     def models(self):
-        return [self.settings.model(r) for r in ("fast", "coder")]
+        # Ollama reports untagged models with a ':latest' suffix; status must still see them.
+        return [self.settings.model("fast"), self.settings.model("coder") + ":latest"]
 
     def loaded(self):
         return []

@@ -12,7 +12,7 @@ from . import opencode
 from .acb import TRIGGERS
 from .core import Stack
 from .crawl import CrawlError, check_public
-from .ollama import OllamaError
+from .ollama import OllamaError, is_installed
 from .routing import select
 
 MAX_BODY = 100_000
@@ -27,7 +27,7 @@ def status(stack: Stack) -> dict:
         installed, loaded, error = stack.client.models(), stack.client.loaded(), None
     except OllamaError as exc:
         installed, loaded, error = [], [], str(exc)
-    roles = [{"role": r, "model": s.model(r), "installed": s.model(r) in installed}
+    roles = [{"role": r, "model": s.model(r), "installed": is_installed(s.model(r), installed)}
              for r in ("fast", "coder", "reasoner")]
     return {
         "ollama": s.base_url, "error": error, "roles": roles, "loaded": loaded,
