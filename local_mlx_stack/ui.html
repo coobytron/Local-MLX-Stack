@@ -166,6 +166,8 @@ async function loadStatus() {
       const tr = el("tr"), st = el("td", r.installed ? "ok" : "bad", r.installed ? "✓ installed" : "✗ missing");
       tr.append(el("td", null, r.role), el("td", null, r.model), st); t.append(tr);
     }
+    const om = s.opencode_model, tr = el("tr"), st = el("td", om.installed ? "ok" : "bad", om.installed ? "✓ installed" : `✗ missing (${om.hint})`);
+    tr.append(el("td", null, "opencode"), el("td", null, om.model), st); t.append(tr);
     const facts = el("p", "mute", `Ollama ${s.ollama} · ${s.error ? "NOT reachable: " + s.error : "reachable"} · loaded now: ${s.loaded.join(", ") || "none"} · context ${s.num_ctx} · keep_alive ${s.keep_alive} · OpenCode: ${s.opencode || "not in PATH"} · ACB: ${s.acb || "not found (optional)"}`);
     box.className = ""; show(box, t, facts);
     const sel = $("pl-trigger");
@@ -228,7 +230,7 @@ $("oc-go").onclick = () => guarded($("oc-go"), $("oc-out"), async () => {
   const p = await post("/opencode", { prompt: $("oc-prompt").value, project: $("oc-project").value, role: $("oc-role").value });
   const q = (s) => "'" + s.replace(/'/g, "'\\''") + "'";
   const line = `cd ${q(p.project)} && ` + (p.config ? `OPENCODE_CONFIG=${q(p.config)} ` : "") + p.command.map(q).join(" ");
-  show($("oc-out"), block(`${p.role} · ${p.model} — ${p.why}`, line));
+  show($("oc-out"), block(`${p.role} · ${p.model} — ${p.why}` + (p.warning ? ` — WARNING: ${p.warning}` : ""), line));
 });
 
 loadStatus();

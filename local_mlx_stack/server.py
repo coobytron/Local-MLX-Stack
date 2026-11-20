@@ -37,7 +37,10 @@ def status(stack: Stack) -> dict:
         installed, loaded, error = [], [], str(exc)
     roles = [{"role": r, "model": s.model(r), "installed": is_installed(s.model(r), installed)}
              for r in ("fast", "coder", "reasoner")]
+    oc_model = {"model": s.opencode_model, "installed": is_installed(s.opencode_model, installed),
+                "hint": "run: stack setup"}
     return {
+        "opencode_model": oc_model,
         "ollama": s.base_url, "error": error, "roles": roles, "loaded": loaded,
         "num_ctx": s.context, "keep_alive": s.keep_alive,
         "opencode": shutil.which("opencode"),
@@ -154,7 +157,9 @@ def serve(stack: Stack, port: int = 8788, *, allow_private: bool = False, crawl_
                     project = data.get("project")
                     if not isinstance(project, str) or not project.strip():
                         return self.send_json(400, {"error": "project folder is required"})
-                    return self.send_json(200, opencode.plan(prompt, Path(clean_path(project)), role, settings))
+                    installed = opencode.installed_models(stack.client)
+                    return self.send_json(200, opencode.plan(
+                        prompt, Path(clean_path(project)), role, settings, installed))
                 if self.path == "/pipeline":
                     trigger, project = data.get("trigger", "review"), data.get("project") or None
                     if trigger not in TRIGGERS or (project is not None and not isinstance(project, str)):

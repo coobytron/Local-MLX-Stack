@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="stack", description="Local Ollama / MLX multi-model stack")
     parser.add_argument("--acb-root", help="Local checkout of coobytron/Agent-Cody-Banks")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("setup", help="Create the 32k-context OpenCode model if it is missing")
     sub.add_parser("doctor", help="Check Ollama and model installation")
     route = sub.add_parser("route", help="Show routing decision without calling a model")
     route.add_argument("prompt")
@@ -46,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--list", action="store_true", help="List tasks and exit")
     bench.add_argument("--agentic", action="store_true",
                        help="Run OpenCode edit jobs in temporary project copies instead of chat tasks (slow)")
+    bench.add_argument("--repeat", type=int, default=1, help="Run the whole selection N times (1-10) to expose noise")
     bench.add_argument("--timeout", type=int, help="Seconds per agentic task (default: per task, 300-420)")
     oc = sub.add_parser("opencode", help="Launch local OpenCode against a project, or print dry run")
     oc.add_argument("prompt")
@@ -57,7 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
     client = OllamaClient(settings)
     acb_root = locate(args.acb_root)
     stack = Stack(client, acb_root)
@@ -71,10 +77,21 @@ def main(argv: list[str] | None = None) -> int:
                 present = is_installed(model, models)
                 print(f"  {role:8} {model:25} {'INSTALLED' if present else 'MISSING'}")
             print(f"Loaded: {', '.join(loaded) if loaded else '(none)'}")
+            oc_ok = is_installed(settings.opencode_model, models)
+            print(f"  {'opencode':8} {settings.opencode_model:25} "
+                  f"{'INSTALLED' if oc_ok else 'MISSING (run: stack setup)'}")
             print(f"48GB profile: num_ctx={settings.context}, keep_alive={settings.keep_alive}")
             print(f"OpenCode: {shutil.which('opencode') or 'not in PATH'}")
             print(f"Agent Cody Banks: {acb_root or 'not found (optional)'} — {ACB_URL}")
             return 0 if all(is_installed(settings.model(r), models) for r in ("fast", "coder", "reasoner")) else 1
+        if args.command == "setup":
+            if is_installed(settings.opencode_model, client.models()):
+                print(f"{settings.opencode_model} is already installed.")
+            else:
+                client.create_variant()
+                print(f"Created {settings.opencode_model} from {settings.coder} "
+                      f"with context {settings.opencode_ctx}.")
+            return 0
         if args.command == "route":
             r = select(args.prompt, args.role)
             print(json.dumps({"role": r.role, "model": settings.model(r.role), "why": r.why}, indent=2))
@@ -101,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("port must be between 1 and 65535")
             serve(stack, args.port)
         elif args.command == "bench":
+            if not 1 <= args.repeat <= 10:
+                raise ValueError("--repeat must be between 1 and 10")
             pool = agentic.TASKS if args.agentic else bench.TASKS
             by_name = {t.name: t for t in pool}
             if args.list:
@@ -116,26 +135,34 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError(f"Unknown task(s): {', '.join(unknown)}. Try --list.")
             models = [m.strip() for m in args.models.split(",")] if args.models else [settings.coder]
             progress = lambda s: print(s, file=sys.stderr, flush=True)
+            chosen = [by_name[n] for n in wanted]
             if args.agentic:
                 print(agentic.WARNING, flush=True)
-                results = agentic.run_agentic(settings, models, [by_name[n] for n in wanted],
-                                              timeout=args.timeout, progress=progress)
+                run_once = lambda: agentic.run_agentic(settings, models, chosen, timeout=args.timeout, progress=progress)
             else:
                 right, total, misses = bench.router_accuracy()
                 print(f"Router (no model): {right}/{total} typical prompts sent to the right role"
                       + "".join(f"\n  miss: {m}" for m in misses))
-                results = bench.run(settings, models, [by_name[n] for n in wanted], progress=progress)
+                run_once = lambda: bench.run(settings, models, chosen, progress=progress)
+            results = []
+            for i in range(1, args.repeat + 1):
+                if args.repeat > 1:
+                    progress(f"run {i}/{args.repeat}")
+                results += [{**r, "run": i} for r in run_once()]
             print("\n" + bench.format_table(results))
             if args.output:
                 bench.save(results, args.output)
                 print(f"\nSaved {len(results)} result(s) to {args.output.expanduser().resolve()}")
         elif args.command == "opencode":
-            p = opencode.plan(args.prompt, args.project, args.role, settings)
+            p = opencode.plan(args.prompt, args.project, args.role, settings,
+                              opencode.installed_models(client))
+            if p["warning"]:
+                print(f"WARNING: {p['warning']}", file=sys.stderr)
             cmd, project = p["command"], p["project"]
             env = os.environ.copy()
             if p["config"]:
                 env["OPENCODE_CONFIG"] = p["config"]
-            print(f"Project: {project}\nCommand: {cmd!r}\nConfig: {env.get('OPENCODE_CONFIG', '(autodiscovery)')}", flush=True)
+            print(f"Project: {project}\nModel: {p['model']}\nCommand: {cmd!r}\nConfig: {env.get('OPENCODE_CONFIG', '(autodiscovery)')}", flush=True)
             if args.execute:
                 if not shutil.which("opencode"):
                     raise ValueError("OpenCode not found. Install it first: https://opencode.ai")

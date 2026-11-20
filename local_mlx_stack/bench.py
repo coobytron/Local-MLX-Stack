@@ -750,26 +750,60 @@ def run(settings: Settings, models: list[str], tasks: list[Task], *,
 def format_table(results: list[dict]) -> str:
     models = list(dict.fromkeys(r["model"] for r in results))
     tasks = list(dict.fromkeys(r["task"] for r in results))
-    cell = {(r["model"], r["task"]): r for r in results}
+    cells: dict[tuple[str, str], list[dict]] = {}
+    for r in results:
+        cells.setdefault((r["model"], r["task"]), []).append(r)
+    repeated = any(len(g) > 1 for g in cells.values())
+
+    def signature(r: dict) -> tuple:
+        """Same score AND same failing checks, so two different 3-pass runs still count as flaky."""
+        return r["passed"], frozenset(c["name"] for c in r["checks"] if c["ok"] is False)
+
+    def summed(rows: list[dict]) -> str:
+        good = sum(r["passed"] for r in rows)
+        text = f"{good}/{good + sum(r['failed'] for r in rows)}"
+        return text + (f" x{len(rows)}" if repeated else "")
+
+    def cell_text(rows: list[dict]) -> str:
+        flaky = len({signature(r) for r in rows}) > 1
+        return f"{summed(rows)} {sum(r['seconds'] for r in rows) / len(rows):.0f}s" + ("*" if flaky else "")
+
+    texts = {k: cell_text(g) for k, g in cells.items()}
     tw, mw = max(len(t) for t in tasks + ["total"]), max(len(m) for m in models + ["00/00 000s"])
+    if repeated:
+        mw = max([mw] + [len(t) for t in texts.values()])
     lines = ["  ".join([f"{'task':<{tw}}"] + [f"{m:>{mw}}" for m in models])]
     for t in tasks:
-        row = []
-        for m in models:
-            r = cell.get((m, t))
-            row.append(f"{r['passed']}/{r['passed'] + r['failed']} {r['seconds']:.0f}s".rjust(mw) if r else "-".rjust(mw))
-        lines.append("  ".join([f"{t:<{tw}}"] + row))
+        lines.append("  ".join([f"{t:<{tw}}"] + [texts.get((m, t), "-").rjust(mw) for m in models]))
     totals = []
     for m in models:
         mine = [r for r in results if r["model"] == m]
+        runs = max(len(g) for (cm, _), g in cells.items() if cm == m)
         good = sum(r["passed"] for r in mine)
-        totals.append(f"{good}/{good + sum(r['failed'] for r in mine)} {sum(r['seconds'] for r in mine):.0f}s".rjust(mw))
+        count = f" x{runs}" if repeated else ""
+        totals.append(f"{good}/{good + sum(r['failed'] for r in mine)}{count} "
+                      f"{sum(r['seconds'] for r in mine) / runs:.0f}s".rjust(mw))
     lines += ["-" * len(lines[0]), "  ".join([f"{'total':<{tw}}"] + totals)]
-    misses = [f"  {r['model']} · {r['task']}: {c['name']}" + (f" ({c['note']})" if c["note"] else "")
-              for r in results for c in r["checks"] if c["ok"] is False]
+    if repeated:
+        lines.append("pass/graded summed over runs, xN = runs, seconds = mean per run")
+        if any(len({signature(r) for r in g}) > 1 for g in cells.values()):
+            lines.append("* results differed between runs")
+    misses: dict[tuple[str, str, str], list] = {}  # (model, task, check) -> [failing runs, note, notes differ]
+    for r in results:
+        for c in r["checks"]:
+            if c["ok"] is False:
+                entry = misses.setdefault((r["model"], r["task"], c["name"]), [0, c["note"], False])
+                entry[0] += 1
+                if c["note"] and entry[1] and c["note"] != entry[1]:
+                    entry[2] = True
+                elif c["note"] and not entry[1]:
+                    entry[1] = c["note"]
+    miss_lines = [f"  {m} · {t}: {n}" + (f" ({note}{'; notes vary' if varied else ''})" if note else "")
+                  + (f" ({fails}/{len(cells[(m, t)])} runs)" if len(cells[(m, t)]) > 1 else "")
+                  for (m, t, n), (fails, note, varied) in misses.items()]
     skipped = sorted({c["name"] for r in results for c in r["checks"] if c["ok"] is None})
-    if misses:
-        lines += ["", "Failed checks:"] + misses
+    if miss_lines:
+        lines += ["", "Failed checks:"] + miss_lines
     if skipped:
         lines += ["", "Not checkable here: " + ", ".join(skipped)]
     return "\n".join(lines)

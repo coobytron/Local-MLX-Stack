@@ -15,7 +15,7 @@ class CliTests(unittest.TestCase):
 
     def test_opencode_dry_run_does_not_execute(self):
         with tempfile.TemporaryDirectory() as d:
-            with patch("local_mlx_stack.cli.subprocess.run") as run, io.StringIO() as output, contextlib.redirect_stdout(output):
+            with patch("local_mlx_stack.cli.subprocess.run") as run, patch("local_mlx_stack.cli.OllamaClient.models", return_value=[]), io.StringIO() as output, contextlib.redirect_stdout(output):
                 self.assertEqual(main(["opencode", "Implement a test", "--project", d]), 0)
                 run.assert_not_called()
                 self.assertIn("Dry run only", output.getvalue())

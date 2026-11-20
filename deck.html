@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local MLX Stack: offline AI on your Mac</title>
+<style>
+  :root { --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --mute:#6e6e73; --line:#d2d2d7; --acc:#0071e3; --ok:#1a7f37; --warn:#b36b00; --bad:#c62828; --bar:#e8e8ed; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#000; --card:#1c1c1e; --ink:#f5f5f7; --mute:#98989d; --line:#3a3a3c; --acc:#2997ff; --ok:#46c26b; --warn:#ffb340; --bad:#ff6b6b; --bar:#2c2c2e; } }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:clamp(16px,1.6vw,22px)/1.45 -apple-system,"SF Pro Display","SF Pro Text",system-ui,sans-serif; overflow:hidden; }
+  .slide { position:absolute; inset:0; padding:6vh 7vw 9vh; display:none; flex-direction:column; justify-content:center; gap:2.2vh; animation:in .25s ease; }
+  .slide.on { display:flex; }
+  @keyframes in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  h1 { font-size:clamp(34px,5.6vw,76px); line-height:1.05; margin:0; letter-spacing:-.02em; font-weight:700; }
+  h2 { font-size:clamp(26px,3.6vw,50px); line-height:1.1; margin:0; letter-spacing:-.015em; font-weight:650; }
+  p { margin:0; } .sub { color:var(--mute); font-size:1.1em; max-width:46em; }
+  .tag { color:var(--acc); font-weight:650; font-size:.8em; letter-spacing:.06em; text-transform:uppercase; }
+  .row { display:flex; gap:2vw; flex-wrap:wrap; } .row > * { flex:1 1 14em; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:2.2vh 1.6vw; }
+  .card h3 { margin:0 0 .4em; font-size:1.05em; } .card p, .card li { color:var(--mute); font-size:.92em; }
+  ul { margin:0; padding-left:1.2em; } li { margin:.25em 0; }
+  .big { font-size:clamp(40px,7vw,100px); font-weight:700; letter-spacing:-.03em; line-height:1; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .mute { color:var(--mute); }
+  table { border-collapse:collapse; width:100%; font-size:.92em; background:var(--card); border-radius:14px; overflow:hidden; }
+  th, td { text-align:left; padding:1.1vh 1.1vw; border-bottom:1px solid var(--line); } th { color:var(--mute); font-weight:600; font-size:.85em; }
+  tr:last-child td { border-bottom:0; }
+  .flow { display:flex; align-items:stretch; gap:1vw; flex-wrap:wrap; }
+  .flow .card { flex:1 1 11em; text-align:center; } .arrow { align-self:center; color:var(--mute); font-size:1.6em; }
+  .bars { display:grid; gap:1.4vh; }
+  .bar-label { display:flex; justify-content:space-between; font-size:.9em; margin-bottom:.3vh; }
+  .bar { height:2.6vh; background:var(--bar); border-radius:99px; overflow:hidden; } .bar i { display:block; height:100%; border-radius:99px; background:var(--acc); }
+  .bar.slow i { background:var(--warn); }
+  .steps { counter-reset:s; display:grid; gap:1.1vh; grid-template-columns:1fr 1fr; }
+  .steps div { counter-increment:s; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1.4vh 1.2vw; font-size:.86em; }
+  .steps div::before { content:counter(s); color:var(--acc); font-weight:700; margin-right:.6em; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:1.6vh 1.4vw; font:.8em/1.5 ui-monospace,"SF Mono",monospace; margin:0; overflow:hidden; }
+  .loop { font-family:ui-monospace,"SF Mono",monospace; font-size:.85em; line-height:1.7; color:var(--mute); }
+  #bar { position:fixed; left:0; bottom:0; height:4px; background:var(--acc); transition:width .25s; }
+  #count { position:fixed; right:2vw; bottom:1.6vh; color:var(--mute); font-size:.8em; }
+  #hint { position:fixed; left:2vw; bottom:1.6vh; color:var(--mute); font-size:.8em; }
+  @media print { html, body { overflow:visible; height:auto; } .slide { display:flex !important; position:relative; page-break-after:always; min-height:100vh; animation:none; } #bar, #count, #hint { display:none; } }
+</style>
+</head>
+<body>
+
+<section class="slide on">
+  <p class="tag">Local MLX Stack</p>
+  <h1>AI that runs on your Mac,<br>with no internet.</h1>
+  <p class="sub">From the first run to a working benchmark loop. Everything measured on the M5 Max, 48GB.</p>
+  <p class="mute">Press → to start</p>
+</section>
+
+<section class="slide">
+  <p class="tag">What it is</p>
+  <h2>One question in. One model out.</h2>
+  <div class="flow">
+    <div class="card"><h3>Your prompt</h3><p>"Fix this bug"</p></div><div class="arrow">→</div>
+    <div class="card"><h3>Keyword router</h3><p>No AI picks the model. Free and predictable.</p></div><div class="arrow">→</div>
+    <div class="card"><h3>One of three models</h3><p>Fast · Coder · Reasoner. Loaded one at a time, then unloaded.</p></div>
+  </div>
+  <div class="row">
+    <div class="card"><h3>Web UI</h3><p>Status, Ask, Pipeline, Research, OpenCode.</p></div>
+    <div class="card"><h3>OpenCode</h3><p>Edits real files with a local model.</p></div>
+    <div class="card"><h3>Benchmarks</h3><p>`stack bench` scores models with plain code.</p></div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="tag">The journey</p>
+  <h2>Eight steps to here</h2>
+  <div class="steps">
+    <div>Read the stack: a keyword router, 3 models</div>
+    <div>Built a web UI so it's easy to see</div>
+    <div>Fixed install snags (iCloud, names, paths)</div>
+    <div>OpenCode looped 25 times on a finished job</div>
+    <div>Built a 19-task chat benchmark</div>
+    <div>Built an agentic benchmark: real edit jobs</div>
+    <div>Added <b>stack setup</b> and <b>--repeat</b></div>
+    <div>Agents built each step, other agents reviewed it</div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="tag">The big lesson</p>
+  <h2>The loop was a memory problem</h2>
+  <div class="row">
+    <div class="card"><h3 class="bad">Small context (default)</h3>
+      <p class="loop">Model finishes ✅<br>Page is full<br>OpenCode: "summarize"<br>Summary fills the page again<br>↺ repeat 25 times</p></div>
+    <div class="card"><h3 class="ok">32k context</h3>
+      <p class="loop">Model finishes ✅<br>Room to spare<br>Stops. Done.</p></div>
+  </div>
+  <p class="sub">Proved by experiment: the same gemma model looped on all 4 jobs at the default context and on none at 32k.</p>
+</section>
+
+<section class="slide">
+  <p class="tag">Chat benchmark</p>
+  <h2>Same quality. Five times the speed.</h2>
+  <div class="bars">
+    <div><div class="bar-label"><span><b>qwen3-coder-32k</b>: 100 of 104 checks</span><span>94 seconds</span></div><div class="bar"><i style="width:96%"></i></div></div>
+    <div><div class="bar-label"><span><b>gemma4:12b-mlx</b>: 95 of 104 checks</span><span>522 seconds</span></div><div class="bar slow"><i style="width:91%"></i></div></div>
+  </div>
+  <p class="sub">18 tasks graded by plain code: Node tests, a Swift compile, an M5Unified lookup. No AI judges another AI.</p>
+</section>
+
+<section class="slide">
+  <p class="tag">Where gemma slipped</p>
+  <h2>Hard tasks tell them apart</h2>
+  <div class="row">
+    <div class="card"><div class="big warn">2/10</div><p>gemma on semver parsing<br>(the 30b scored 7/10)</p></div>
+    <div class="card"><h3>Invented a function</h3><p><code>getBattery</code> doesn't exist in M5Unified. The check caught it automatically.</p></div>
+  </div>
+  <p class="sub">Easy tasks tied 52 to 52. The hard tier is what shows the difference.</p>
+</section>
+
+<section class="slide">
+  <p class="tag">Agentic benchmark</p>
+  <h2>Can it finish real edit jobs?</h2>
+  <table>
+    <tr><th>Job</th><th>qwen3-coder-32k</th><th>gemma, default</th><th>gemma, 32k</th></tr>
+    <tr><td>Add a flag</td><td class="ok">✅ pass</td><td class="bad">❌ looped</td><td class="ok">✅ pass</td></tr>
+    <tr><td>Fix a bug</td><td class="ok">✅ pass</td><td class="warn">⚠️ looped</td><td class="bad">❌ no edit</td></tr>
+    <tr><td>Translate a file</td><td class="warn">⚠️ also edited comments</td><td class="bad">❌ looped</td><td class="warn">⚠️ broke indentation</td></tr>
+    <tr><td>Rename across 5 files</td><td class="ok">✅ twice (1 stall)</td><td class="bad">❌ looped</td><td class="warn">⚠️ 2 of 5 files</td></tr>
+  </table>
+  <p class="sub">One run each: a signal, not proof. That's why <b>--repeat 3</b> exists.</p>
+</section>
+
+<section class="slide">
+  <p class="tag">Rules of thumb</p>
+  <h2>Five habits that save time</h2>
+  <div class="steps" style="grid-template-columns:1fr">
+    <div><b>One file, one task, one run</b> for OpenCode. Split big jobs.</div>
+    <div><b>Never trust the model's summary.</b> Open the file or run the check.</div>
+    <div><b>Always use the 32k model</b> for OpenCode: <code>stack setup</code> once.</div>
+    <div><b>Give the Pipeline a project folder,</b> or it invents files.</div>
+    <div><b>Benchmark three times.</b> One run can mislead.</div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="tag">Offline or not</p>
+  <h2>What works with no internet</h2>
+  <div class="row">
+    <div class="card"><h3 class="ok">✅ Offline</h3><ul><li>Ask and routing</li><li>Pipeline on a project</li><li>OpenCode edits</li><li>All benchmarks</li></ul></div>
+    <div class="card"><h3 class="bad">❌ Needs internet</h3><ul><li>Research tab (site crawler)</li><li>OpenCode web fetch</li></ul></div>
+    <div class="card"><h3 class="warn">⏳ Possible, unused</h3><ul><li>Search your notes by meaning (<code>nomic-embed-text</code> is installed)</li></ul></div>
+  </div>
+</section>
+
+<section class="slide">
+  <p class="tag">M5 Max and M1 Max</p>
+  <h2>What we know about each Mac</h2>
+  <div class="row">
+    <div class="card"><h3 class="ok">M5 Max (this Mac)</h3><p>Everything in this deck was measured here, with 48GB of memory.</p></div>
+    <div class="card"><h3 class="warn">M1 Max (two spare)</h3><p>Not tested yet. Expect slower answers, and the 32k models need more memory. Check each Mac's RAM first.</p></div>
+  </div>
+  <p class="sub">Simplest way in: run Ollama on an M1 Max, reach it over an SSH tunnel, and run the same <code>stack bench --repeat 3</code> on both to compare.</p>
+</section>
+
+<section class="slide">
+  <p class="tag">Try it</p>
+  <h2>Four commands</h2>
+  <pre>stack doctor                          # is everything installed?
+stack setup                           # make the 32k model (once)
+stack bench --hard --repeat 3 --models qwen3-coder-32k,gemma4:12b-mlx
+stack bench --agentic --repeat 3 --models qwen3-coder-32k</pre>
+  <p class="sub">Next: run the repeated benchmarks, try Research on one real site, then test an M1 Max.</p>
+</section>
+
+<div id="hint">← → or space · F for fullscreen</div>
+<div id="count"></div>
+<div id="bar"></div>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  let i = Math.min(Math.max(parseInt(location.hash.slice(1), 10) - 1 || 0, 0), slides.length - 1);
+  function show(n) {
+    i = Math.min(Math.max(n, 0), slides.length - 1);
+    slides.forEach((s, k) => s.classList.toggle("on", k === i));
+    document.getElementById("count").textContent = `${i + 1} / ${slides.length}`;
+    document.getElementById("bar").style.width = `${((i + 1) / slides.length) * 100}%`;
+    history.replaceState(null, "", `#${i + 1}`);
+  }
+  addEventListener("keydown", (e) => {
+    if (["ArrowRight", "PageDown", " ", "Enter"].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    else if (e.key === "Home") show(0);
+    else if (e.key === "End") show(slides.length - 1);
+    else if (e.key.toLowerCase() === "f") document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+  });
+  addEventListener("click", (e) => show(e.clientX > innerWidth / 3 ? i + 1 : i - 1));
+  show(i);
+</script>
+</body>
+</html>

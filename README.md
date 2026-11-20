@@ -103,12 +103,13 @@ stack opencode "Add tests for the history restore feature" \
 
 Install [OpenCode](https://opencode.ai/) separately. It may ask you to approve file edits or commands; the stack intentionally does **not** auto-approve them. Run `opencode run --help` to verify your installed OpenCode version. OpenCode configuration has evolved between releases; if your version already autodiscovers Ollama, that is another supported route. The wrapper never invokes `opencode` unless you pass `--execute`.
 
-**One-time setup for OpenCode's context.** OpenCode talks to Ollama's `/v1` endpoint, which can't set `num_ctx`, so a too-small default can make OpenCode's auto-summary repeat forever. Create a bigger-context copy of the coder model once:
+**One-time setup for OpenCode's context.** OpenCode talks to Ollama's `/v1` endpoint, which can't set `num_ctx`, so a too-small default can make OpenCode's auto-summary repeat forever. Run once:
 
 ```bash
-printf 'FROM qwen3-coder:30b\nPARAMETER num_ctx 32768\n' > /tmp/Modelfile
-ollama create qwen3-coder-32k -f /tmp/Modelfile
+stack setup
 ```
+
+It creates `qwen3-coder-32k` (a 32k-context copy of the coder model) through Ollama's API, and does nothing if it already exists. `stack opencode` then uses that model automatically; if it is missing it falls back to the plain coder model and prints a warning. Override the name with `STACK_OPENCODE_MODEL` (and the context with `STACK_OPENCODE_CTX`). `stack doctor` and the Status tab show whether it is installed.
 
 `opencode.json` defaults to `ollama/qwen3-coder-32k` and turns on `compaction.prune` so old tool output is dropped as it goes. While a run is active, `ollama ps` shows the real context in use.
 
@@ -180,6 +181,14 @@ Tasks come from real work: **web** (single-file HTML timer), **javascript** (`ti
 The default run covers only the easy tier, which strong models tend to pass fully. `--hard` adds tasks meant to tell models apart: a 17-line messy extraction with distractor people and dates, CSV and semver parsers run in Node against edge cases, a needle in a 6,000-character log, strict JSON-only output, a five-runner logic puzzle (unique by brute force), a generic Swift function compiled and run, and a 4-bullet summary that forbids copying 6-word runs. `--list` shows each task's tier; naming a task with `--tasks` runs it whatever its tier.
 
 Every check is plain code (regex, parse, compile, test run, lookup); no model grades another. Each model fills all three roles, so a column answers "is this one model enough for everything?". The table lists tasks down the side and models across, with `passed/graded seconds`; failed checks are listed underneath, and checks the machine can't run (for example no Metal toolchain) are reported as "not checkable", not failed. Change one thing (model, `STACK_NUM_CTX`, a prompt), rerun, compare. This tests chat answers, not OpenCode's tool use. Models load one at a time, so a full run takes a while.
+
+**Noise: `--repeat N`** (1-10, chat and `--agentic`) reruns the whole selection N times and keeps every run (`--output` gets one JSON line per run, with a `run` field). One run can be lucky or unlucky; repeats show which.
+
+```bash
+stack bench --agentic --models qwen3-coder-32k --tasks rename_multi --repeat 3
+```
+
+With repeats a cell reads `22/24 x3 50s*`: passed/graded **summed over runs**, `x3` = runs, seconds = **mean** per run, `*` = the runs did not all score the same. Failed checks collapse to one line with `(2/3 runs)`. With the default `--repeat 1` the table is unchanged.
 
 ### Agentic bench: does OpenCode actually finish edit jobs?
 

@@ -1,95 +1,75 @@
-# Local MLX Stack: what we found, what it can do offline
+# Local MLX Stack, simplified
 
-*Written 2026-11-19 from our hands-on sessions. "Verified" means we saw it happen. No benchmark numbers exist yet.*
+*Updated 2026-11-20. Everything below was measured on this M5 Max (48GB). Nothing has been run on the two M1 Max Macs yet.*
 
-## 1. This computer, at a glance
+## The one-minute version
 
-| Item | Value |
+- **What it is:** a small app that runs AI models **on your Mac, offline**, picks the right one for each job, and can edit code through OpenCode.
+- **Use it:** double-click `start.command`, open http://127.0.0.1:8788.
+- **The #1 lesson:** OpenCode loops forever when the model's context is too small. The **32k copies of the models fix it** (`stack setup` makes one).
+- **Best everyday model here:** `qwen3-coder-32k`. Same quality as gemma on easy work, about 5 times faster.
+
+## How we got here (the story in 8 steps)
+
+| # | What we did | What we learned |
+|---|---|---|
+| 1 | Read the stack: a keyword router sends each prompt to one of 3 models | No AI picks the model, so routing is free and predictable (12/12 on typical prompts) |
+| 2 | Built a web UI: Status, Ask, Pipeline, OpenCode, Research | Easier to understand than the command line; copy buttons help |
+| 3 | Hit install snags (iCloud hid files, `:latest` names, pasted paths) | Keep the Python env **outside iCloud** (`~/.venvs/mlx-stack`) |
+| 4 | OpenCode looped 25 times on a finished job | Cause: **small context**. The 32k model finished cleanly |
+| 5 | Built `stack bench`: 19 chat tasks graded by plain code | Both models tie on easy tasks; the hard tier separates them |
+| 6 | Built `stack bench --agentic`: OpenCode edit jobs on throwaway copies | Proved the loop was context: gemma looped at default, not at 32k |
+| 7 | Added `stack setup` and `--repeat N` | 32k is now the default; repeats expose lucky or unlucky runs |
+| 8 | Had agents build each step, then other agents review it | Reviewers caught a real bug (streamed replies broke `stack setup`) |
+
+## Results at a glance
+
+| Test | qwen3-coder-32k | gemma4:12b-mlx |
+|---|---|---|
+| 18 chat tasks (easy + hard) | **100/104 in 94s** | 95/104 in 522s |
+| Biggest chat gap | semver parsing 7/10 | semver parsing 2/10; invented a function that doesn't exist |
+| OpenCode edit jobs | add flag ✅, fix bug ✅, 5-file rename ✅ (once stalled), translate ⚠️ | at 32k: add flag ✅, others partial |
+
+**Verdict:** use the 30b for OpenCode and anything multi-file. Gemma is fine for quick single-file or chat jobs, but slower and shakier.
+
+## Rules of thumb
+
+1. **One file, one task, one run** for OpenCode. Split big jobs.
+2. **Never trust the model's summary.** Open the file or run the check.
+3. **Always use the 32k model for OpenCode.** `stack setup` once, then `stack opencode` uses it.
+4. **Give the Pipeline a `--project` folder**, or it invents files.
+5. **Run benchmarks 3 times** (`--repeat 3`): single runs mislead.
+
+## Cheat sheet
+
+```bash
+~/.venvs/mlx-stack/bin/stack doctor                       # is everything installed?
+~/.venvs/mlx-stack/bin/stack setup                        # make the 32k OpenCode model (once)
+~/.venvs/mlx-stack/bin/stack bench --hard --repeat 3 --models qwen3-coder-32k,gemma4:12b-mlx
+~/.venvs/mlx-stack/bin/stack bench --agentic --repeat 3 --models qwen3-coder-32k
+```
+
+## Offline or not
+
+| Part | Offline? |
 |---|---|
-| Machine | M5 Max Mac, 48GB unified memory, macOS 27, Apple Silicon (arm64) |
-| Tools present | Ollama (running), OpenCode, Swift 6.4.2, Node, Python 3.11, M5Unified/M5GFX Arduino libraries |
-| Tool missing | Metal compiler toolchain (`xcodebuild -downloadComponent MetalToolchain` to add) |
-| Models installed | `gemma4:12b`, `gemma4:12b-mlx`, `mistral-small3.1`, `qwen3-coder:30b`, `qwen3.5:35b-mlx`, `nomic-embed-text`, plus `qwen3-coder-32k` (our 32k-context copy of the 30b) |
-| Run it | double-click `start.command`, open http://127.0.0.1:8788 |
-| Python env | `~/.venvs/mlx-stack` (outside iCloud on purpose) |
+| Ask, Pipeline, OpenCode edits, benchmarks | ✅ yes |
+| Research tab (crawls a website), OpenCode web fetch | ❌ needs internet |
+| Search your notes by meaning (`nomic-embed-text` is installed) | ✅ possible, **nothing uses it yet** |
 
-## 2. What we can do offline
+## M5 Max vs M1 Max: what we know
 
-| Capability | Offline? | Status |
-|---|---|---|
-| Ask a question (router picks 1 model) | ✅ | Works |
-| Pipeline: brief → plan → draft → review on a real project folder | ✅ | Works; text only, never edits files |
-| Web UI: Status, Ask, Pipeline, OpenCode command builder, Copy buttons | ✅ | Works |
-| OpenCode edits real files with a local model | ✅ | Works with the 32k model, one file at a time |
-| `stack bench` (11 tasks, plain-code grading) | ✅ | Built and unit-tested; **never run on real models yet** |
-| Research tab (crawl a site, one summary per page) | ❌ needs internet | Built and tested on a fake site; **not tried on a real site** |
-| OpenCode web fetch | ❌ needs internet | Exists; the model guessed wrong URLs when left alone |
-| Search by meaning across your notes (`nomic-embed-text`) | ✅ possible | Model installed, **nothing uses it yet** |
+- ✅ **M5 Max (this Mac):** everything above, measured here.
+- ❓ **M1 Max (two spare Macs):** untested. Expect **slower** answers, and **the 32k models need more memory**. Check how much each has (32GB or 64GB) before pulling the 30b.
+- **Simplest way to use them:** run Ollama on an M1 Max and point this stack at it with an SSH tunnel (`ssh -L 11435:127.0.0.1:11434 <m1>`, then `OLLAMA_HOST=http://127.0.0.1:11435`). No code change.
+- **A fair comparison:** run the same `stack bench --repeat 3` on each Mac and compare the tables.
 
-## 3. Key findings
+## Still unknown
 
-1. ✅ **The "loop" was OpenCode's auto-summary repeating, not the model going crazy.** With the small default context it summarized itself 25 times after finishing a simple job. With the 32k model the same kind of job finished and stopped. (We never ran `ollama ps`, so the exact cause is an informed guess.)
-2. ⚠️ **Big multi-file jobs still stall.** Translating a whole app (15 files) made it re-read the same files and summarize without editing anything. **One file per run worked**: about 60 strings translated.
-3. ⚠️ **The model's own report is unreliable.** After the good run it said "5 strings changed" and listed 8, and claimed it left strings that weren't in the file. It also missed 6 strings. Check the file, not the summary.
-4. ✅ **Small model is competitive on simple jobs.** On the single-file timer, `gemma4:12b-mlx` had fewer bugs than `qwen3-coder:30b`. One test only.
-5. ⚠️ **Models guess when they can't look.** Given web access, OpenCode invented a GitHub owner and got two 404s. Models invent file names too, which is why the pipeline needs `--project`.
-6. ✅ **Chat answers and agent work are different skills.** Passing a chat test doesn't mean OpenCode will finish a multi-step edit.
+- Memory use and exact speed per model (we only have total seconds).
+- Whether the Research crawler works well on real sites.
+- Whether any small model can drive OpenCode on multi-file jobs reliably.
 
-### First benchmark run (2026-11-19, 10 easy chat tasks)
+## Gotchas we already fixed
 
-| | qwen3-coder-32k | gemma4:12b-mlx |
-|---|---|---|
-| Score | 52/52 | 52/52 |
-| Total time | 57s | 286s |
-
-✅ Quality tie, ✅ the 30b is ~5x faster. ⚠️ Too easy to separate the models, so we added a hard tier and an agentic bench.
-
-### Hard tier (chat, 8 extra tasks)
-
-| | qwen3-coder-32k | gemma4:12b-mlx |
-|---|---|---|
-| All 18 tasks | 100/104 in 94s | 95/104 in 522s |
-
-Biggest gap: `hard_semver` (30b 7/10, gemma 2/10). Gemma invented a function (`getBattery`) that doesn't exist in M5Unified.
-
-### Agentic bench (OpenCode edits throwaway copies; 1 run each, so treat as a signal)
-
-| Task | qwen3-coder-32k | gemma 16k (default) | gemma 32k |
-|---|---|---|---|
-| add_flag | ✅ 6/6 | ❌ looped, no edit | ✅ 7/7 |
-| fix_bug | ✅ 6/6 | ⚠️ looped | ❌ no edit |
-| translate_file | ⚠️ 8/10 (also translated comments) | ❌ looped | ⚠️ 9/10 (broke indentation) |
-| rename_multi (5 files) | ✅ 8/8 twice, 1 stall | ❌ looped | ⚠️ 5/8 (3 files missed) |
-
-✅ **Context size caused the summary loop:** gemma looped on all 4 tasks at the default context and none at 32k. ⚠️ **Small model is shaky on multi-file edits.** ⚠️ **qwen3-coder sometimes prints a tool call as text** (`<function=grep>`) and stops (1 of ~4 runs).
-
-## 4. Setup gotchas we hit (all fixed)
-
-| Problem | Fix |
-|---|---|
-| iCloud hides the venv's `.pth` files, so `stack` can't find its code | Venv moved to `~/.venvs/mlx-stack` |
-| Status said a model was "missing" | Ollama names untagged models `name:latest`; the check now matches both |
-| Pasted paths with quotes or `\ ` failed | The UI now cleans them |
-| `stack opencode` ignored the config's default model | Set `STACK_CODER_MODEL=qwen3-coder-32k` first |
-| OpenCode needs a bigger context | `ollama create qwen3-coder-32k` from a Modelfile with `num_ctx 32768` |
-
-## 5. Rules of thumb
-
-- **One file, one task, one run** for OpenCode. Bigger jobs: split them.
-- **Always check the result yourself** (grep, open the file); don't trust the summary.
-- **Use `--project`** for the Pipeline so it reads real files.
-- **A classic ESP32 can't do USB HID**; an S2 or S3 can.
-
-## 6. Not known yet
-
-- Real speed and memory numbers (no timing data collected).
-- Which model is best at which job. Run `stack bench` to get that.
-- Whether any small model can drive OpenCode reliably.
-- Whether the Research crawler behaves on real websites.
-
-## 7. Next steps, in order
-
-1. Run `stack bench --models qwen3-coder-32k,gemma4:12b-mlx --output ~/bench.jsonl` and read the table.
-2. Add an **agentic bench** (OpenCode on scratch copies, graded by files changed and loop detection).
-3. Try Research on one small public site.
-4. Parked: two spare M1 Max Macs as extra Ollama hosts (SSH tunnel, no code change needed).
+iCloud hiding files (env moved out) · `:latest` model names · quoted pasted paths · OpenCode using the wrong folder (`$PWD`) · `stack setup` failing on streamed replies · bad env values crashing with a traceback.
