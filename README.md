@@ -165,6 +165,31 @@ export OLLAMA_HOST=http://127.0.0.1:11434
 
 Large-context and concurrent model use can exhaust memory. This stack serializes its own requests and deliberately unloads between calls. Other apps using Ollama independently can still load extra models. If you prefer a small resident fast model later, change `STACK_FAST_MODEL` and `STACK_KEEP_ALIVE`, then observe Activity Monitor memory pressure.
 
+## Benchmark loop: where is each model strong?
+
+```bash
+stack bench --list                                    # tasks and their categories
+stack bench --models qwen3-coder-32k,gemma4:12b-mlx --output ~/bench.jsonl
+stack bench --tasks js_titlecase,translate --models gemma4:12b
+stack bench --heavy --models gemma4:12b-mlx           # adds the multi-call pipeline task
+stack bench --hard --models gemma4:12b-mlx            # adds the hard tier (8 tasks)
+```
+
+Tasks come from real work: **web** (single-file HTML timer), **javascript** (`titleCase` and `wrapLines`, run in Node against test cases), **extraction** (notes to JSON), **summarizing** (3 bullets, word and number limits), **swift** (translate string literals; `runLengths` compiled and run with `swiftc`), **metal** (compiled with the Metal compiler), **embedded** (M5StickC Plus sketch checked against your installed M5Unified headers), **reasoning** (a puzzle with one right answer) and, with `--heavy`, **pipeline** (runs the real pipeline on a tiny fixture project and checks it cites real files and invents none). A free router check (no model) prints first.
+
+The default run covers only the easy tier, which strong models tend to pass fully. `--hard` adds tasks meant to tell models apart: a 17-line messy extraction with distractor people and dates, CSV and semver parsers run in Node against edge cases, a needle in a 6,000-character log, strict JSON-only output, a five-runner logic puzzle (unique by brute force), a generic Swift function compiled and run, and a 4-bullet summary that forbids copying 6-word runs. `--list` shows each task's tier; naming a task with `--tasks` runs it whatever its tier.
+
+Every check is plain code (regex, parse, compile, test run, lookup); no model grades another. Each model fills all three roles, so a column answers "is this one model enough for everything?". The table lists tasks down the side and models across, with `passed/graded seconds`; failed checks are listed underneath, and checks the machine can't run (for example no Metal toolchain) are reported as "not checkable", not failed. Change one thing (model, `STACK_NUM_CTX`, a prompt), rerun, compare. This tests chat answers, not OpenCode's tool use. Models load one at a time, so a full run takes a while.
+
+### Agentic bench: does OpenCode actually finish edit jobs?
+
+```bash
+stack bench --agentic --list
+stack bench --agentic --models qwen3-coder-32k --tasks add_flag,rename_multi --timeout 300 --output ~/agentic.jsonl
+```
+
+Requires **OpenCode installed** (`opencode` on PATH) and Ollama running; it refuses to start otherwise. Expect **minutes per task** per model. Each task runs `opencode run` with edit permissions inside a fresh temporary copy of a small fixture project (never your real projects), then plain code grades the result by running it: `add_flag` (run the CLI with and without `--shout`), `fix_bug` (`python3 -m unittest`, test file byte-identical), `translate_file` (no CJK left in string literals, comments and logic unchanged, still compiles) and `rename_multi` (rename across 5 files in 2 folders, `main.py` output unchanged; the multi-file stall test). Every task also checks: finished before the timeout, no summary loop (the `## Objective` compaction template at most twice, no repeated-line loop), at least one file changed, and no stray new files. A timed-out run is killed along with its whole process group. Same table and `--output` format as the chat bench.
+
 ## Tests
 
 ```bash

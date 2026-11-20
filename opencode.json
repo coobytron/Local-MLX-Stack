@@ -18,6 +18,10 @@
           "name": "Gemma 4 12B MLX (small coder trial)",
           "limit": {"context": 16384, "output": 4096}
         },
+        "gemma4-12b-mlx-32k": {
+          "name": "Gemma 4 12B MLX 32k (small coder trial)",
+          "limit": {"context": 32768, "output": 4096}
+        },
         "qwen3-coder-32k": {
           "name": "Qwen3-Coder 30B 32k (code, OpenCode)",
           "limit": {"context": 32768, "output": 4096}

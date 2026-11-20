@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-from . import opencode
+from . import agentic, bench, opencode
 from .acb import ACB_URL, TRIGGERS, locate
 from .core import Stack
 from .ollama import OllamaClient, OllamaError, Settings, is_installed
@@ -37,6 +37,16 @@ def build_parser() -> argparse.ArgumentParser:
     pipe.add_argument("--output", type=Path, help="Save result as JSON")
     api = sub.add_parser("serve", help="Start localhost-only JSON API")
     api.add_argument("--port", type=int, default=8788)
+    bench = sub.add_parser("bench", help="Run fixed tasks on one or more models and compare plain-code scores")
+    bench.add_argument("--models", help="Comma-separated Ollama tags (default: the coder model)")
+    bench.add_argument("--tasks", help="Comma-separated task names (default: all except heavy ones)")
+    bench.add_argument("--heavy", action="store_true", help="Also run heavy tasks (several model calls each)")
+    bench.add_argument("--hard", action="store_true", help="Also run the hard tier (tasks that tell strong models apart)")
+    bench.add_argument("--output", type=Path, help="Append results as JSON lines")
+    bench.add_argument("--list", action="store_true", help="List tasks and exit")
+    bench.add_argument("--agentic", action="store_true",
+                       help="Run OpenCode edit jobs in temporary project copies instead of chat tasks (slow)")
+    bench.add_argument("--timeout", type=int, help="Seconds per agentic task (default: per task, 300-420)")
     oc = sub.add_parser("opencode", help="Launch local OpenCode against a project, or print dry run")
     oc.add_argument("prompt")
     oc.add_argument("--project", type=Path, default=Path.cwd())
@@ -90,6 +100,35 @@ def main(argv: list[str] | None = None) -> int:
             if not (1 <= args.port <= 65535):
                 raise ValueError("port must be between 1 and 65535")
             serve(stack, args.port)
+        elif args.command == "bench":
+            pool = agentic.TASKS if args.agentic else bench.TASKS
+            by_name = {t.name: t for t in pool}
+            if args.list:
+                for t in pool:
+                    print(f"{t.name:<20} {t.category:<12} {getattr(t, 'tier', 'easy'):<5}"
+                          f"{' (heavy)' if getattr(t, 'heavy', False) else ''}")
+                return 0
+            wanted = ([n.strip() for n in args.tasks.split(",")] if args.tasks
+                      else [t.name for t in pool if args.agentic
+                            or ((args.heavy or not t.heavy) and (args.hard or t.tier == "easy"))])
+            unknown = [n for n in wanted if n not in by_name]
+            if unknown:
+                raise ValueError(f"Unknown task(s): {', '.join(unknown)}. Try --list.")
+            models = [m.strip() for m in args.models.split(",")] if args.models else [settings.coder]
+            progress = lambda s: print(s, file=sys.stderr, flush=True)
+            if args.agentic:
+                print(agentic.WARNING, flush=True)
+                results = agentic.run_agentic(settings, models, [by_name[n] for n in wanted],
+                                              timeout=args.timeout, progress=progress)
+            else:
+                right, total, misses = bench.router_accuracy()
+                print(f"Router (no model): {right}/{total} typical prompts sent to the right role"
+                      + "".join(f"\n  miss: {m}" for m in misses))
+                results = bench.run(settings, models, [by_name[n] for n in wanted], progress=progress)
+            print("\n" + bench.format_table(results))
+            if args.output:
+                bench.save(results, args.output)
+                print(f"\nSaved {len(results)} result(s) to {args.output.expanduser().resolve()}")
         elif args.command == "opencode":
             p = opencode.plan(args.prompt, args.project, args.role, settings)
             cmd, project = p["command"], p["project"]
